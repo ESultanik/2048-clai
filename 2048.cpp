@@ -91,7 +91,18 @@ public:
     inline uint_fast8_t numEmptySpaces() const {
         return 16 - numFilledSpaces();
     }
-    
+    uint_fast8_t getLargestExponent() const {
+        uint_fast8_t biggest = 0;
+        uint64_t board = rawBoard;
+        while(board) {
+            auto exponent = board & (uint64_t)0b1111;
+            if(exponent > biggest) {
+                biggest = exponent;
+            }
+            board >>= 4;
+        }
+        return biggest;
+    }    
 private:
     friend class Node;
     inline void setValue(uint_fast8_t row, uint_fast8_t col, uint_fast8_t exponent) {
@@ -257,8 +268,8 @@ public:
     uint16_t getScore() const { return score; }
     /**
      * Heuristic Value:
-     * MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                     | 16 bits       | 23 bits          | LSB
-     *     | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are bordering an empty space | current score | currently unused |
+     * MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                     | 3 bits                                     | 16 bits       | 20 bits          | LSB
+     *     | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are bordering an empty space | exponent of the largest piece on the board | current score | currently unused |
      *
      * The value is zero if the game is over and we didn't get 2048.
      */
@@ -285,7 +296,9 @@ public:
         h |= emptySpaces << 43;
         auto enclosedTwosFours = (int_fast64_t)16 - (int_fast64_t)board.numEnclosedTwosFours();
         h |= enclosedTwosFours << 39;
-        h |= (int_fast64_t)(getScore()) << 23;
+        auto largestExponent = (int_fast64_t)board.getLargestExponent();
+        h |= largestExponent << 36;
+        h |= (int_fast64_t)(getScore()) << 20;
         return h;
     }
 public:
