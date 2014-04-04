@@ -52,6 +52,45 @@ public:
             return 2 << (exponent - 1);
         }
     }
+    /**
+     * Counts the number of 2 and 4 blocks that are not bordering an
+     * empty space.
+     */
+    uint_fast8_t numEnclosedTwosFours() const {
+        uint_fast8_t count = 0;
+        for(uint_fast8_t row=0; row<4; ++row) {
+            for(uint_fast8_t col=0; col<4; ++col) {
+                auto v = getValue(row, col);
+                if(!(v == 2 || v == 4)) {
+                    continue;
+                }
+                if(col > 0 && !getValue(row, col-1)) {
+                    ++count;
+                } else if(col < 3 && !getValue(row, col+1)) {
+                    ++count;
+                } else if(row > 0 && !getValue(row-1, col)) {
+                    ++count;
+                } else if(row < 3 && !getValue(row+1, col)) {
+                    ++count;
+                }
+            }
+        }
+        return count;
+    }
+    uint_fast8_t numFilledSpaces() const {
+        uint_fast8_t count = 0;
+        uint64_t board = rawBoard;
+        while(board) {
+            if(board & (uint64_t)0b1111) {
+                ++count;
+            }
+            board >>= 4;
+        }
+        return count;
+    }
+    inline uint_fast8_t numEmptySpaces() const {
+        return 16 - numFilledSpaces();
+    }
     
 private:
     friend class Node;
@@ -183,8 +222,9 @@ private:
     Player player;
     std::shared_ptr<std::default_random_engine> rand;
     uint16_t score;
+    mutable std::list<Node>* cachedSuccessors;
 public:
-    Node(unsigned seed) : move(START), player(HUMAN), score(0) {
+    Node(unsigned seed) : move(START), player(HUMAN), score(0), cachedSuccessors(nullptr) {
         rand = std::make_shared<std::default_random_engine>();
         rand->seed(seed);
         std::uniform_int_distribution<uint_fast8_t> distribution(0,3);
@@ -206,12 +246,48 @@ public:
         }
     }
     Node() : Node(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()) {}
-    Node(const Node& copy) : move(copy.move), board(copy.board), player(copy.player), rand(copy.rand), score(copy.score) {}
-    Node(const Move& move, const Board& board, const Player& player, const std::shared_ptr<std::default_random_engine>& rand, uint16_t score) : move(move), board(board), player(player), rand(rand), score(score) {}
+    Node(const Node& copy) : move(copy.move), board(copy.board), player(copy.player), rand(copy.rand), score(copy.score), cachedSuccessors(nullptr) {}
+    Node(const Move& move, const Board& board, const Player& player, const std::shared_ptr<std::default_random_engine>& rand, uint16_t score) : move(move), board(board), player(player), rand(rand), score(score), cachedSuccessors(nullptr) {}
+    ~Node() {
+        delete cachedSuccessors;
+    }
     Move getMove() const { return move; }
     const Board& getBoard() const { return board; }
     Player getPlayer() const { return player; }
     uint16_t getScore() const { return score; }
+    /**
+     * Heuristic Value:
+     * MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                     | 16 bits       | 23 bits          | LSB
+     *     | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are bordering an empty space | current score | currently unused |
+     *
+     * The value is zero if the game is over and we didn't get 2048.
+     */
+    int_fast64_t getHeuristic() const {
+        int_fast64_t h = 0;
+        auto& board = getBoard();
+        if(isGameOver()) {
+            /* see if we got 2048! */
+            bool won = false;
+            for(uint_fast8_t row=0; !won && row<4; ++row) {
+                for(uint_fast8_t col=0; !won && col<4; ++col) {
+                    if(board.getValue(row, col) == 2048) {
+                        won = true;
+                        break;
+                    }
+                }
+            }
+            if(!won) {
+                return 0;
+            }
+            h |= (int_fast64_t)(getScore()) << 47;
+        }
+        auto emptySpaces = (int_fast64_t)board.numEmptySpaces();
+        h |= emptySpaces << 43;
+        auto enclosedTwosFours = (int_fast64_t)16 - (int_fast64_t)board.numEnclosedTwosFours();
+        h |= enclosedTwosFours << 39;
+        h |= (int_fast64_t)(getScore()) << 23;
+        return h;
+    }
 public:
     struct NodeAllocator: std::allocator<Node> {
         template< class U, class... Args >
@@ -222,43 +298,45 @@ public:
     };
     friend class NodeAllocator;
 
-    std::list<Node> getSuccessors() const {
-        std::list<Node> ret;
+    const std::list<Node>& getSuccessors() const {
+        if(!cachedSuccessors) {
+            cachedSuccessors = new std::list<Node>();
 
-        if(player == RANDOM) {
-            /* add a random 2 or 4 to an empty space */
-            for(uint_fast8_t row=0; row<4; ++row) {
-                for(uint_fast8_t col=0; col<4; ++col) {
-                    if(!board.getValue(row, col)) {
-                        for(auto value : {1, 2}) {
-                            auto newNode = ret.emplace(ret.end(), *this);
-                            newNode->board.setValue(row, col, value);
-                            newNode->player = HUMAN;
-                            newNode->move = RAND;
+            if(player == RANDOM) {
+                /* add a random 2 or 4 to an empty space */
+                for(uint_fast8_t row=0; row<4; ++row) {
+                    for(uint_fast8_t col=0; col<4; ++col) {
+                        if(!board.getValue(row, col)) {
+                            for(auto value : {1, 2}) {
+                                auto newNode = cachedSuccessors->emplace(cachedSuccessors->end(), *this);
+                                newNode->board.setValue(row, col, value);
+                                newNode->player = HUMAN;
+                                newNode->move = RAND;
+                            }
                         }
                     }
                 }
-            }
-        } else {
-            for(const Move& move : {UP, DOWN, LEFT, RIGHT}) {
-                Board newBoard(board);
-                int16_t addedScore = newBoard.move(move);
-                if(addedScore >= 0) {
-                    ret.emplace_back(move, newBoard, RANDOM, rand, score + addedScore);
+            } else {
+                for(const Move& move : {UP, DOWN, LEFT, RIGHT}) {
+                    Board newBoard(board);
+                    int16_t addedScore = newBoard.move(move);
+                    if(addedScore >= 0) {
+                        cachedSuccessors->emplace_back(move, newBoard, RANDOM, rand, score + addedScore);
+                    }
                 }
             }
         }
 
-        return ret;
+        return *cachedSuccessors;
     }
     Node getRandomSuccessor() const {
-        std::list<Node> successors = getSuccessors();
+        const std::list<Node>& successors = getSuccessors();
         std::uniform_int_distribution<size_t> sDist(0,successors.size()-1);
         auto index = std::bind(sDist, *rand);
         //auto i = index();
         auto i = ::rand() % successors.size();
         size_t j = 0;
-        for(Node& node : successors) {
+        for(auto& node : successors) {
             if(j++ == i) {
                 return node;
             }
@@ -344,6 +422,33 @@ std::ostream& operator<<(std::ostream& stream, const Node& node) {
     return stream;
 }
 
+int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_fast64_t beta) {
+    if(depth == 0 || node.isGameOver()) {
+        return node.getHeuristic();
+    }
+    if(node.getPlayer() == HUMAN) {
+        for(auto& succ : node.getSuccessors()) {
+            alpha = std::max(alpha, alphabeta(succ, depth - 1, alpha, beta));
+            if(beta <= alpha) {
+                break;
+            }
+        }
+        return alpha;
+    } else {
+        for(auto& succ : node.getSuccessors()) {
+            beta = std::min(beta, alphabeta(succ, depth - 1, alpha, beta));
+            if(beta <= alpha) {
+                break;
+            }
+        }
+        return beta;
+    }
+}
+
+inline int_fast64_t alphabeta(const Node& node, size_t maxDepth) {
+    return alphabeta(node, maxDepth, std::numeric_limits<int_fast64_t>::min(), std::numeric_limits<int_fast64_t>::max());
+}
+
 int main(int argc, char** argv) {
     Node node(8);//({std::make_tuple(1, 1, 1), std::make_tuple(3, 2, 1)});
 
@@ -380,6 +485,50 @@ int main(int argc, char** argv) {
             for(auto& line : lines) {
                 mvprintw((height - lines.size())/2 + i++,(width-line.length())/2,"%s",line.c_str());
             }
+
+            Move suggestedMove = START;
+            int_fast64_t bestScore = -1;
+            uint_fast8_t searchDepth;
+            uint_fast8_t emptySpaces = node.getBoard().numEmptySpaces();
+            if(emptySpaces > 8) {
+                searchDepth = 5;
+            } else if(emptySpaces > 4) {
+                searchDepth = 6;
+            } else {
+                searchDepth = 7;
+            }
+            //mvprintw(3, 3, "%d", searchDepth);
+            for(auto& succ : node.getSuccessors()) {
+                auto ab = alphabeta(succ, searchDepth);
+                if(ab > bestScore) {
+                    bestScore = ab;
+                    suggestedMove = succ.getMove();
+                }
+            }
+            if(bestScore >= 0) {
+                std::string suggestion = "Suggested Move: ";
+                switch(suggestedMove) {
+                case UP:
+                    suggestion += "^";
+                    break;
+                case DOWN:
+                    suggestion += "V";
+                    break;
+                case LEFT:
+                    suggestion += "<";
+                    break;
+                case RIGHT:
+                    suggestion += ">";
+                    break;
+                default:
+                    break;
+                }
+                mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-suggestion.length())/2,"%s",suggestion.c_str());
+                mvprintw((height - lines.size())/2 + 3 + lines.size(),(width-18)/2,"(heuristic: %lld)      ",bestScore);
+            } else {
+                mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-14)/2,"No Suggestion!");
+            }
+
             refresh();
             int c = getch();
 #else
@@ -394,6 +543,7 @@ int main(int argc, char** argv) {
 #endif
             case 'w':
             case 'W':
+            case '^':
                 move = UP;
                 break;
 #if USE_CURSES
@@ -401,6 +551,8 @@ int main(int argc, char** argv) {
 #endif
             case 's':
             case 'S':
+            case 'V':
+            case 'v':
                 move = DOWN;
                 break;
 #if USE_CURSES
@@ -408,6 +560,7 @@ int main(int argc, char** argv) {
 #endif
             case 'a':
             case 'A':
+            case '<':
                 move = LEFT;
                 break;
 #if USE_CURSES
@@ -415,6 +568,7 @@ int main(int argc, char** argv) {
 #endif
             case 'd':
             case 'D':
+            case '>':
                 move = RIGHT;
                 break;
 #if USE_CURSES
@@ -426,6 +580,14 @@ int main(int argc, char** argv) {
             case -1:
 #endif
                 return 0;
+#if USE_CURSES
+            case KEY_ENTER:
+            case '\n':
+                if(suggestedMove != START) {
+                    move = suggestedMove;
+                }
+                break;
+#endif
             default:
                 continue;
             }
