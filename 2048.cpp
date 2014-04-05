@@ -448,6 +448,8 @@ int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_f
         }
         return alpha;
     } else {
+#if 0
+        /* regular MiniMax: */
         for(auto& succ : node.getSuccessors()) {
             beta = std::min(beta, alphabeta(succ, depth - 1, alpha, beta));
             if(beta <= alpha) {
@@ -455,6 +457,15 @@ int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_f
             }
         }
         return beta;
+#else 
+        /* ExpectiMax: */
+        long double average = 0.0;
+        auto& successors = node.getSuccessors();
+        for(auto& succ : successors) {
+            average += (long double)alphabeta(succ, depth - 1, alpha, beta) / (long double)(successors.size());
+        }
+        return std::min(beta, (int_fast64_t)(average + 0.5));
+#endif
     }
 }
 
@@ -463,12 +474,18 @@ inline int_fast64_t alphabeta(const Node& node, size_t maxDepth) {
 }
 
 int main(int argc, char** argv) {
-    Node node(8);//({std::make_tuple(1, 1, 1), std::make_tuple(3, 2, 1)});
+    Node node;//(8);//({std::make_tuple(1, 1, 1), std::make_tuple(3, 2, 1)});
+
+    bool runAutomated = (argc == 2) && !strcmp(argv[1], "-a");
 
 #if USE_CURSES
     initscr();
-    timeout(-1);
-    cbreak();
+    if(runAutomated) {
+        timeout(0);
+    } else {
+        timeout(-1);
+        cbreak();
+    }
     noecho();
     keypad(stdscr, true);
 #else
@@ -504,6 +521,8 @@ int main(int argc, char** argv) {
             uint_fast8_t searchDepth;
             uint_fast8_t emptySpaces = node.getBoard().numEmptySpaces();
             if(emptySpaces > 8) {
+                searchDepth = 4;
+            } else if(emptySpaces > 6) {
                 searchDepth = 5;
             } else if(emptySpaces > 4) {
                 searchDepth = 6;
@@ -602,7 +621,13 @@ int main(int argc, char** argv) {
                 break;
 #endif
             default:
-                continue;
+                if(!runAutomated) {
+                    continue;
+                }
+            }
+            if(runAutomated) {
+                assert(suggestedMove != START);
+                move = suggestedMove;
             }
             for(auto& succ : node.getSuccessors()) {
                 if(succ.getMove() == move) {
@@ -613,6 +638,15 @@ int main(int argc, char** argv) {
         } else {
             node = node.getRandomSuccessor();
         }
+    }
+
+    if(runAutomated) {
+#if USE_CURSES
+        timeout(-1);
+        getch();
+#else
+        getchar();
+#endif
     }
 
 #if USE_CURSES
