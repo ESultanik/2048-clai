@@ -293,6 +293,30 @@ public:
     }
     Node() : Node(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()) {}
     Node(const Node& copy) : move(copy.move), board(copy.board), player(copy.player), score(copy.score), cachedSuccessors(nullptr) {}
+    Node(Node&& move) : move(move.move), board(move.board), player(move.player), score(move.score), cachedSuccessors(move.cachedSuccessors) {
+        move.cachedSuccessors = nullptr;
+    }
+    Node& operator=(const Node& copy) {
+        cachedSuccessors = nullptr;
+        move = copy.move;
+        board = copy.board;
+        player = copy.player;
+        score = copy.score;
+        return *this;        
+    }
+    Node& operator=(const Node&& move) {
+        auto oldSuccessors = cachedSuccessors;
+        cachedSuccessors = move.cachedSuccessors;
+        move.cachedSuccessors = nullptr;
+        this->move = move.move;
+        board = move.board;
+        player = move.player;
+        score = move.score;
+        if(oldSuccessors) {
+            delete oldSuccessors;
+        }
+        return *this;
+    }
     Node(const Move& move, const Board& board, const Player& player, uint16_t score) : move(move), board(board), player(player), score(score), cachedSuccessors(nullptr) {}
     ~Node() {
         clearSuccessorCache();
@@ -699,12 +723,12 @@ int main(int argc, char** argv) {
             }
             for(auto& succ : node.getSuccessors()) {
                 if(succ.getMove() == move) {
-                    node = succ;
+                    node = std::move(succ);
                     break;
                 }
             }
         } else {
-            node = node.getRandomSuccessor();
+            node = std::move(node.getRandomSuccessor());
         }
     }
 
