@@ -56,26 +56,67 @@ public:
      * Counts the number of 2 and 4 blocks that are not bordering an
      * empty space.
      */
-    uint_fast8_t numEnclosedTwosFours() const {
+    uint_fast8_t numEnclosedTwosFours(uint_fast16_t values[][4]) const {
         uint_fast8_t count = 0;
-        for(uint_fast8_t row=0; row<4; ++row) {
-            for(uint_fast8_t col=0; col<4; ++col) {
-                auto v = getValue(row, col);
+        for(size_t row=0; row<4; ++row) {
+            for(size_t col=0; col<4; ++col) {
+                auto v = values[row][col];
                 if(!(v == 2 || v == 4)) {
                     continue;
                 }
-                if(col > 0 && !getValue(row, col-1)) {
+                if(col > 0 && !values[row][col-1]) {
                     ++count;
-                } else if(col < 3 && !getValue(row, col+1)) {
+                } else if(col < 3 && !values[row][col+1]) {
                     ++count;
-                } else if(row > 0 && !getValue(row-1, col)) {
+                } else if(row > 0 && !values[row-1][col]) {
                     ++count;
-                } else if(row < 3 && !getValue(row+1, col)) {
+                } else if(row < 3 && !values[row+1][col]) {
                     ++count;
                 }
             }
         }
         return count;
+    }
+    /**
+     * The values[][] array must be pre-initialized to all zeros before this is called!
+     */
+    void fillExponents(uint_fast16_t values[][4]) const {
+        uint64_t board = rawBoard;
+        size_t row=0;
+        size_t col=0;
+        while(board) {
+            values[row][col] = board & (uint64_t)0b1111;
+            if(++col >= 4) {
+                ++row;
+                col = 0;
+            }
+            board >>= 4;
+        }
+    }
+    /**
+     * Counts the number of pairs of neighboring pieces that have
+     * matching values.
+     */
+    uint_fast8_t numMatchingPairs(uint_fast16_t values[][4]) const {
+        uint_fast8_t count = 0;
+        for(size_t row=0; row<4; ++row) {
+            for(size_t col=0; col<4; ++col) {
+                auto v = values[row][col];
+                if(!v) {
+                    continue;
+                }
+                if(col > 0 && v == values[row][col-1]) {
+                    ++count;
+                } else if(col < 3 && v == values[row][col+1]) {
+                    ++count;
+                } else if(row > 0 && v == values[row-1][col]) {
+                    ++count;
+                } else if(row < 3 && v == values[row+1][col]) {
+                    ++count;
+                }
+            }
+        }
+        return count / 2;
     }
     uint_fast8_t numFilledSpaces() const {
         uint_fast8_t count = 0;
@@ -102,7 +143,7 @@ public:
             board >>= 4;
         }
         return biggest;
-    }    
+    }
 private:
     friend class Node;
     inline void setValue(uint_fast8_t row, uint_fast8_t col, uint_fast8_t exponent) {
@@ -150,14 +191,9 @@ private:
     }
     /* returns the increase in score from this move, or -1 if the move was invalid */
     int16_t move(Move direction) {
-        uint_fast16_t values[4][4];
-        bool alreadyMerged[4][4];
-        for(uint_fast8_t row=0; row<4; ++row) {
-            for(uint_fast8_t col=0; col<4; ++col) {
-                values[row][col] = getExponentValue(row, col);
-                alreadyMerged[row][col] = false;
-            }
-        }
+        uint_fast16_t values[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
+        fillExponents(values);
+        bool alreadyMerged[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
         int16_t score = -1;
         int_fast8_t rowStart = 0;
         int_fast8_t rowEnd = 4;
@@ -279,8 +315,11 @@ public:
     uint16_t getScore() const { return score; }
     /**
      * Heuristic Value:
-     * MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                         | 3 bits                                     | 16 bits       | 20 bits          | LSB
-     *     | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are not bordering an empty space | exponent of the largest piece on the board | current score | currently unused |
+     *  MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                         | ...
+     *      | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are not bordering an empty space | ...
+     *
+     *  ... | 7 bits                                         | 3 bits                                     | 16 bits       | 13 bits          | LSB
+     *  ... | number of pairs of neighboring matching pieces | exponent of the largest piece on the board | current score | currently unused |
      *
      * The value is zero if the game is over and we didn't get 2048.
      */
@@ -293,13 +332,17 @@ public:
             }
             h |= (int_fast64_t)(getScore()) << 47;
         }
+        uint_fast16_t values[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
+        board.fillExponents(values);
         auto emptySpaces = (int_fast64_t)board.numEmptySpaces();
         h |= emptySpaces << 43;
-        auto enclosedTwosFours = (int_fast64_t)16 - (int_fast64_t)board.numEnclosedTwosFours();
+        auto enclosedTwosFours = (int_fast64_t)16 - (int_fast64_t)board.numEnclosedTwosFours(values);
         h |= enclosedTwosFours << 39;
-        auto largestExponent = (int_fast64_t)board.getLargestExponent();
-        h |= largestExponent << 36;
-        h |= (int_fast64_t)(getScore()) << 20;
+        auto matchingPairs = (int_fast64_t)board.numMatchingPairs(values);
+        h |= matchingPairs << 32;
+        // auto largestExponent = (int_fast64_t)board.getLargestExponent();
+        // h |= largestExponent << 29;
+        h |= (int_fast64_t)(getScore()) << 13;
         return h;
     }
 public:
@@ -479,6 +522,7 @@ inline int_fast64_t alphabeta(const Node& node, size_t maxDepth) {
 
 #if USE_CURSES
 Move printState(const Node& node) {
+    clear();
     std::stringstream ss;
     ss << node;
     int height, width;
@@ -546,7 +590,7 @@ Move printState(const Node& node) {
             break;
         }
         mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-suggestion.length())/2,"%s",suggestion.c_str());
-        mvprintw((height - lines.size())/2 + 3 + lines.size(),(width-18)/2,"(heuristic: %lld)      ",bestScore);
+        mvprintw((height - lines.size())/2 + 3 + lines.size(),(width-18)/2,"(heuristic: %lld)",bestScore);
     } else {
         mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-14)/2,"No Suggestion!");
     }
