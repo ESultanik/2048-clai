@@ -310,7 +310,7 @@ public:
         }
         template< class U > struct rebind { typedef NodeAllocator other; };
     };
-    friend class NodeAllocator;
+    friend struct NodeAllocator;
 
     const std::list<Node>& getSuccessors() const {
         if(!cachedSuccessors) {
@@ -349,7 +349,7 @@ public:
     Node getRandomSuccessor() const {
         const std::list<Node>& successors = getSuccessors();
         std::uniform_int_distribution<size_t> sDist(0,successors.size()-1);
-        auto index = std::bind(sDist, *rand);
+        //auto index = std::bind(sDist, *rand);
         //auto i = index();
         auto i = ::rand() % successors.size();
         size_t j = 0;
