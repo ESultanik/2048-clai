@@ -267,17 +267,16 @@ private:
     Move move;
     Board board;
     Player player;
-    std::shared_ptr<std::default_random_engine> rand;
     uint16_t score;
     mutable std::list<Node>* cachedSuccessors;
 public:
     Node(unsigned seed) : move(START), player(HUMAN), score(0), cachedSuccessors(nullptr) {
-        rand = std::make_shared<std::default_random_engine>();
-        rand->seed(seed);
+        auto rand = std::default_random_engine();
+        rand.seed(seed);
         std::uniform_int_distribution<uint_fast8_t> distribution(0,3);
-        auto cellIndex = std::bind(distribution, *rand);
+        auto cellIndex = std::bind(distribution, rand);
         std::uniform_int_distribution<uint_fast8_t> valueDist(1,2);
-        auto value = std::bind(valueDist, *rand);
+        auto value = std::bind(valueDist, rand);
         
         auto r1 = cellIndex();
         auto c1 = cellIndex();
@@ -293,9 +292,12 @@ public:
         }
     }
     Node() : Node(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()) {}
-    Node(const Node& copy) : move(copy.move), board(copy.board), player(copy.player), rand(copy.rand), score(copy.score), cachedSuccessors(nullptr) {}
-    Node(const Move& move, const Board& board, const Player& player, const std::shared_ptr<std::default_random_engine>& rand, uint16_t score) : move(move), board(board), player(player), rand(rand), score(score), cachedSuccessors(nullptr) {}
+    Node(const Node& copy) : move(copy.move), board(copy.board), player(copy.player), score(copy.score), cachedSuccessors(nullptr) {}
+    Node(const Move& move, const Board& board, const Player& player, uint16_t score) : move(move), board(board), player(player), score(score), cachedSuccessors(nullptr) {}
     ~Node() {
+        clearSuccessorCache();
+    }
+    void clearSuccessorCache() const {
         delete cachedSuccessors;
     }
     Move getMove() const { return move; }
@@ -381,7 +383,7 @@ public:
                     Board newBoard(board);
                     int16_t addedScore = newBoard.move(move);
                     if(addedScore >= 0) {
-                        cachedSuccessors->emplace_back(move, newBoard, RANDOM, rand, score + addedScore);
+                        cachedSuccessors->emplace_back(move, newBoard, RANDOM, score + addedScore);
                     }
                 }
             }
@@ -557,11 +559,11 @@ Move printState(const Node& node) {
     if(emptySpaces > 8) {
         searchDepth = 4;
     } else if(emptySpaces > 6) {
-        searchDepth = 5;
+        searchDepth = 4;
     } else if(emptySpaces > 4) {
         searchDepth = 5;
     } else {
-        searchDepth = 5;
+        searchDepth = 6;
     }
     //mvprintw(3, 3, "%d", searchDepth);
     for(auto& succ : node.getSuccessors()) {
@@ -709,6 +711,7 @@ int main(int argc, char** argv) {
     if(runAutomated) {
 #if USE_CURSES
         printState(node);
+        node.clearSuccessorCache();
         timeout(-1);
         getch();
 #else
