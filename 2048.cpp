@@ -265,11 +265,22 @@ public:
     Move getMove() const { return move; }
     const Board& getBoard() const { return board; }
     Player getPlayer() const { return player; }
+    bool has2048() const {
+        /* see if we got 2048! */
+        for(uint_fast8_t row=0; row<4; ++row) {
+            for(uint_fast8_t col=0; col<4; ++col) {
+                if(board.getValue(row, col) == 2048) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
     uint16_t getScore() const { return score; }
     /**
      * Heuristic Value:
-     * MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                     | 3 bits                                     | 16 bits       | 20 bits          | LSB
-     *     | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are bordering an empty space | exponent of the largest piece on the board | current score | currently unused |
+     * MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                         | 3 bits                                     | 16 bits       | 20 bits          | LSB
+     *     | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are not bordering an empty space | exponent of the largest piece on the board | current score | currently unused |
      *
      * The value is zero if the game is over and we didn't get 2048.
      */
@@ -277,17 +288,7 @@ public:
         int_fast64_t h = 0;
         auto& board = getBoard();
         if(isGameOver()) {
-            /* see if we got 2048! */
-            bool won = false;
-            for(uint_fast8_t row=0; !won && row<4; ++row) {
-                for(uint_fast8_t col=0; !won && col<4; ++col) {
-                    if(board.getValue(row, col) == 2048) {
-                        won = true;
-                        break;
-                    }
-                }
-            }
-            if(!won) {
+            if(!has2048()) {
                 return 0;
             }
             h |= (int_fast64_t)(getScore()) << 47;
@@ -314,8 +315,11 @@ public:
     const std::list<Node>& getSuccessors() const {
         if(!cachedSuccessors) {
             cachedSuccessors = new std::list<Node>();
-
-            if(player == RANDOM) {
+            
+            if(has2048()) {
+                /* the game is over if we already have gotten 2048! */
+                /* so there are no successors */
+            } else if(player == RANDOM) {
                 /* add a random 2 or 4 to an empty space */
                 for(uint_fast8_t row=0; row<4; ++row) {
                     for(uint_fast8_t col=0; col<4; ++col) {
@@ -473,6 +477,85 @@ inline int_fast64_t alphabeta(const Node& node, size_t maxDepth) {
     return alphabeta(node, maxDepth, std::numeric_limits<int_fast64_t>::min(), std::numeric_limits<int_fast64_t>::max());
 }
 
+#if USE_CURSES
+Move printState(const Node& node) {
+    std::stringstream ss;
+    ss << node;
+    int height, width;
+    getmaxyx(stdscr,height,width);
+    std::string fileLine;
+    std::list<std::string> lines;
+    while(std::getline(ss, fileLine)) {
+        /* remove the newline */
+        lines.push_back(fileLine);//.substr(0, fileLine.size()-1));
+    }
+    bool gameOver = node.isGameOver();
+    if(gameOver) {
+        mvprintw((height - lines.size())/2 - 3,(width - 10)/2,"Game Over!");
+        mvprintw((height - lines.size())/2 - 2,(width - 18)/2,"Final Score: %d",node.getScore());
+        mvprintw(height - 2,(width - 21)/2,"Press Any Key to Quit");
+    } else {
+        mvprintw((height - lines.size())/2 - 2,(width - 12)/2,"Score: %d",node.getScore());
+    }
+    int i = 0;
+    for(auto& line : lines) {
+        mvprintw((height - lines.size())/2 + i++,(width-line.length())/2,"%s",line.c_str());
+    }
+
+    if(gameOver) {
+        return START;
+    }
+
+    Move suggestedMove = START;
+    int_fast64_t bestScore = -1;
+    uint_fast8_t searchDepth;
+    uint_fast8_t emptySpaces = node.getBoard().numEmptySpaces();
+    if(emptySpaces > 8) {
+        searchDepth = 4;
+    } else if(emptySpaces > 6) {
+        searchDepth = 5;
+    } else if(emptySpaces > 4) {
+        searchDepth = 5;
+    } else {
+        searchDepth = 5;
+    }
+    //mvprintw(3, 3, "%d", searchDepth);
+    for(auto& succ : node.getSuccessors()) {
+        auto ab = alphabeta(succ, searchDepth);
+        if(ab > bestScore) {
+            bestScore = ab;
+            suggestedMove = succ.getMove();
+        }
+    }
+    if(bestScore >= 0) {
+        std::string suggestion = "Suggested Move: ";
+        switch(suggestedMove) {
+        case UP:
+            suggestion += "^";
+            break;
+        case DOWN:
+            suggestion += "V";
+            break;
+        case LEFT:
+            suggestion += "<";
+            break;
+        case RIGHT:
+            suggestion += ">";
+            break;
+        default:
+            break;
+        }
+        mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-suggestion.length())/2,"%s",suggestion.c_str());
+        mvprintw((height - lines.size())/2 + 3 + lines.size(),(width-18)/2,"(heuristic: %lld)      ",bestScore);
+    } else {
+        mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-14)/2,"No Suggestion!");
+    }
+
+    refresh();
+    return suggestedMove;
+}
+#endif
+
 int main(int argc, char** argv) {
     Node node;//(8);//({std::make_tuple(1, 1, 1), std::make_tuple(3, 2, 1)});
 
@@ -500,68 +583,7 @@ int main(int argc, char** argv) {
         if(node.getPlayer() == HUMAN) {
             Move move = START;
 #if USE_CURSES
-            std::stringstream ss;
-            ss << node;
-            int height, width;
-            getmaxyx(stdscr,height,width);
-            std::string fileLine;
-            std::list<std::string> lines;
-            while(std::getline(ss, fileLine)) {
-                /* remove the newline */
-                lines.push_back(fileLine);//.substr(0, fileLine.size()-1));
-            }
-            mvprintw((height - lines.size())/2 - 2,(width - 3)/2,"%d",node.getScore());
-            int i = 0;
-            for(auto& line : lines) {
-                mvprintw((height - lines.size())/2 + i++,(width-line.length())/2,"%s",line.c_str());
-            }
-
-            Move suggestedMove = START;
-            int_fast64_t bestScore = -1;
-            uint_fast8_t searchDepth;
-            uint_fast8_t emptySpaces = node.getBoard().numEmptySpaces();
-            if(emptySpaces > 8) {
-                searchDepth = 4;
-            } else if(emptySpaces > 6) {
-                searchDepth = 5;
-            } else if(emptySpaces > 4) {
-                searchDepth = 6;
-            } else {
-                searchDepth = 7;
-            }
-            //mvprintw(3, 3, "%d", searchDepth);
-            for(auto& succ : node.getSuccessors()) {
-                auto ab = alphabeta(succ, searchDepth);
-                if(ab > bestScore) {
-                    bestScore = ab;
-                    suggestedMove = succ.getMove();
-                }
-            }
-            if(bestScore >= 0) {
-                std::string suggestion = "Suggested Move: ";
-                switch(suggestedMove) {
-                case UP:
-                    suggestion += "^";
-                    break;
-                case DOWN:
-                    suggestion += "V";
-                    break;
-                case LEFT:
-                    suggestion += "<";
-                    break;
-                case RIGHT:
-                    suggestion += ">";
-                    break;
-                default:
-                    break;
-                }
-                mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-suggestion.length())/2,"%s",suggestion.c_str());
-                mvprintw((height - lines.size())/2 + 3 + lines.size(),(width-18)/2,"(heuristic: %lld)      ",bestScore);
-            } else {
-                mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-14)/2,"No Suggestion!");
-            }
-
-            refresh();
+            Move suggestedMove = printState(node);
             int c = getch();
 #else
             std::cout << node << std::endl;
@@ -642,6 +664,7 @@ int main(int argc, char** argv) {
 
     if(runAutomated) {
 #if USE_CURSES
+        printState(node);
         timeout(-1);
         getch();
 #else
@@ -653,9 +676,8 @@ int main(int argc, char** argv) {
     endwin();
 #else
     tcsetattr( STDIN_FILENO, TCSANOW, &oldt);
-#endif
-
     std::cout << node << std::endl << std::endl << "Game Over!" << std::endl << "Final Score: " << (size_t)node.getScore() << std::endl;
+#endif
 
     return 0;
 }
