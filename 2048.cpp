@@ -223,80 +223,109 @@ private:
             return std::make_pair(row, maxCol - colDelta);
         }
     }
-    std::pair<uint_fast8_t,uint_fast8_t> findFarthestPosition(uint_fast16_t values[][4], int_fast8_t row, int_fast8_t col, int_fast8_t rowDelta, int_fast8_t colDelta) const {
-        uint_fast8_t prevRow = row;
-        uint_fast8_t prevCol = col;
+    std::pair<uint_fast8_t,uint_fast8_t> findFarthestPosition(uint_fast16_t values[][4], uint_fast8_t cellRow, uint_fast8_t cellCol, const Move& direction) const {
+        int_fast8_t row = cellRow;
+        int_fast8_t col = cellCol;
+        uint_fast8_t prevRow;
+        uint_fast8_t prevCol;
         do {
             prevRow = row;
             prevCol = col;
-            row += rowDelta;
-            col += colDelta;
+            row += direction.vectorRowDelta;
+            col += direction.vectorColDelta;
         } while(row >= 0 && row < 4 && col >= 0 && col < 4 && !values[row][col]);
         return std::make_pair(prevRow, prevCol);
     }
     /** 
-     * measures how smooth the grid is (as if the values of the pieces
-     * were interpreted as elevations). Sums of the pairwise
-     * difference between neighboring tiles (in log space, so it
-     * represents the number of merges that need to happen before they
-     * can merge).  Note that the pieces can be distant
+     * The sum of the pairwise difference between neighboring tiles,
+     * representing the number of mergers that need to happen before
+     * the two cells can merge.  The maximum possible value if the
+     * board contains all values less than 2048 should be 216.
     */
-    double calculateSmoothness(uint_fast16_t values[][4]) {
-        double smoothness = 0.0;
+    uint_fast8_t calculateSmoothness(uint_fast16_t values[][4]) const {
+        uint_fast8_t smoothness = 0;
         
-        // for(size_t row=0; row<4; row++) {
-        //     for(size_t col=0; col<4; col++) {
-        //         if(values[row][col]) {
-        //             auto value = values[row][col] ;
-        //             for
-        //             for(var direction=1; direction<=2; direction++) {
-        //                 std::pair<uint_fast8_t,uint_fast8_t> targetCell = findFarthestPosition(values, row, col, vector).next;
-
-        //                 if (this.cellOccupied(targetCell)) {
-        //                     var target = this.cellContent(targetCell);
-        //                     var targetValue = Math.log(target.value) / Math.log(2);
-        //                     smoothness -= Math.abs(value - targetValue);
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+        for(size_t row=0; row<4; row++) {
+            for(size_t col=0; col<4; col++) {
+                if(values[row][col]) {
+                    auto value = values[row][col] ;
+                    for(auto& direction : {Move::RIGHT, Move::DOWN}) {
+                        std::pair<uint_fast8_t,uint_fast8_t> targetCell = findFarthestPosition(values, row, col, direction);
+                        int_fast8_t nextRow = targetCell.first + direction.vectorRowDelta;
+                        int_fast8_t nextCol = targetCell.second + direction.vectorColDelta;
+                        if(nextRow >= 0 && nextRow < 4 && nextCol >= 0 && nextCol < 4 && values[nextRow][nextCol]) {
+                            auto otherValue = values[nextRow][nextCol];
+                            if(value >= otherValue) {
+                                smoothness += value - otherValue;
+                            } else {
+                                smoothness += otherValue - value;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return smoothness;
     }
+
+    /**
+     * Measures how close the grid is to being strictly increasing or
+     * deacreasing in both the left/right and up/down directions.
+     *
+     * The higher the value the less monotone the board is.  I believe
+     * the highest possible value is 216 if the board contains values
+     * all less than 2048.
+     */
+    uint_fast8_t calculateMonotonicity(uint_fast16_t values[][4]) const {
+        uint_fast8_t totals[4] = {0, 0, 0, 0};
+
+        for(uint_fast8_t row=0; row<4; ++row) {
+            uint_fast8_t col = 0;
+            uint_fast8_t next = 1;
+            while(next < 4) {
+                for(; next < 4 && !values[row][next]; ++next);
+                if(next >= 4) {
+                    --next;
+                }
+                uint_fast16_t currentValue = values[row][col];
+                uint_fast16_t nextValue = values[row][next];
+                if(currentValue < nextValue) {
+                    totals[0] += nextValue - currentValue;
+                } else {
+                    totals[1] += currentValue - nextValue;
+                }
+                col = next++;
+            }
+        }
+
+        for(uint_fast8_t col=0; col<4; ++col) {
+            uint_fast8_t row = 0;
+            uint_fast8_t next = 1;
+            while(next < 4) {
+                for(; next < 4 && !values[next][col]; ++next);
+                if(next >= 4) {
+                    --next;
+                }
+                uint_fast16_t currentValue = values[row][col];
+                uint_fast16_t nextValue = values[next][col];
+                if(currentValue < nextValue) {
+                    totals[2] += nextValue - currentValue;
+                } else {
+                    totals[3] += currentValue - nextValue;
+                }
+                row = next++;
+            }
+        }
+
+        return std::min(totals[0], totals[1]) + std::min(totals[2], totals[3]);
+    }
+
     /* returns the increase in score from this move, or -1 if the move was invalid */
     int16_t move(const Move& direction) {
         uint_fast16_t values[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
         fillExponents(values);
         bool alreadyMerged[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
         int16_t score = -1;
-        // int_fast8_t rowStart = 0;
-        // int_fast8_t rowEnd = 4;
-        // int_fast8_t rowDelta = 1;
-        // int_fast8_t colStart = 0;
-        // int_fast8_t colEnd = 4;
-        // int_fast8_t colDelta = 1;
-        // int_fast8_t flRowDelta = -1;
-        // int_fast8_t flColDelta = 0;
-        // switch(direction) {
-        // case DOWN:
-        //     rowStart = 3;
-        //     rowEnd = -1;
-        //     rowDelta = -1;
-        //     flRowDelta = 1;
-        //     break;
-        // case LEFT:
-        //     flRowDelta = 0;
-        //     flColDelta = -1;
-        //     break;
-        // case RIGHT:
-        //     colStart = 3;
-        //     colEnd = -1;
-        //     colDelta = -1;
-        //     flRowDelta = 0;
-        //     flColDelta = 1;
-        // default:
-        //     break;
-        // }
         for(int_fast8_t row=direction.rowStart; row != direction.rowEnd; row += direction.rowDelta) {
             for(int_fast8_t col=direction.colStart; col != direction.colEnd; col += direction.colDelta) {
                 auto v = values[row][col];
@@ -430,6 +459,24 @@ public:
         return false;
     }
     uint16_t getScore() const { return score; }
+    int_fast64_t getHeuristic() const {
+        int_fast64_t h = 0;
+        auto& board = getBoard();
+        if(isGameOver()) {
+            if(!has2048()) {
+                return 0;
+            }
+            h |= (int_fast64_t)(getScore()) << 47;
+        }
+        uint_fast16_t values[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
+        board.fillExponents(values);
+        auto smoothness = 240 - (int_fast64_t)board.calculateSmoothness(values);
+        auto monotonicity = 240 - (int_fast64_t)board.calculateMonotonicity(values);
+        auto emptySpaces = (int_fast64_t)board.numEmptySpaces();
+        auto largestExponent = (int_fast64_t)board.getLargestExponent();
+        h += 10 * smoothness + 100 * monotonicity + 270 * emptySpaces + 100 * largestExponent;
+        return h;
+    }
     /**
      * Heuristic Value:
      *  MSB | 1 bit       | 16 bits                     | 7 bits                                                                  | ... 
@@ -440,7 +487,7 @@ public:
      *
      * The value is zero if the game is over and we didn't get 2048.
      */
-    int_fast64_t getHeuristic() const {
+    int_fast64_t getHeuristicOld() const {
         int_fast64_t h = 0;
         auto& board = getBoard();
         if(isGameOver()) {
@@ -611,7 +658,7 @@ int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_f
         }
         return alpha;
     } else {
-#if 0
+#if 1
         /* regular MiniMax: */
         for(auto& succ : node.getSuccessors()) {
             beta = std::min(beta, alphabeta(succ, depth - 1, alpha, beta));
