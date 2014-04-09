@@ -20,7 +20,7 @@
 
 #define DEBUG 0
 
-enum Move {
+enum class MoveType : uint8_t {
     START,
     UP,
     DOWN,
@@ -28,6 +28,40 @@ enum Move {
     RIGHT,
     RAND
 };
+
+class Move {
+public:
+    const int_fast8_t rowStart, rowEnd, rowDelta;
+    const int_fast8_t colStart, colEnd, colDelta;
+    const int_fast8_t vectorRowDelta, vectorColDelta;
+    const MoveType type;
+    Move(MoveType type, int_fast8_t rowStart, int_fast8_t rowEnd, int_fast8_t rowDelta, int_fast8_t colStart, int_fast8_t colEnd, int_fast8_t colDelta, int_fast8_t vectorRowDelta, int_fast8_t vectorColDelta) :
+        rowStart(rowStart), rowEnd(rowEnd), rowDelta(rowDelta),
+        colStart(colStart), colEnd(colEnd), colDelta(colDelta),
+        vectorRowDelta(vectorRowDelta), vectorColDelta(vectorColDelta),
+        type(type)
+    {}
+    inline operator MoveType() const { return type; }
+    inline bool operator==(const Move& other) const {
+        return other.type == type;
+    }
+    inline bool operator!=(const Move& other) const {
+        return !(*this == other);
+    }
+    static const Move UP;
+    static const Move DOWN;
+    static const Move LEFT;
+    static const Move RIGHT;
+    static const Move START;
+    static const Move RAND;
+};
+
+const Move Move::UP(MoveType::UP, 0, 4, 1, 0, 4, 1, -1, 0);
+const Move Move::LEFT(MoveType::LEFT, 0, 4, 1, 0, 4, 1, 0, -1);
+const Move Move::DOWN(MoveType::DOWN, 3, -1, -1, 0, 4, 1, 1, 0);
+const Move Move::RIGHT(MoveType::RIGHT, 0, 4, 1, 3, -1, -1, 0, 1);
+const Move Move::START(MoveType::START, 0, 4, 1, 0, 4, 1, 0, 0);
+const Move Move::RAND(MoveType::RAND, 0, 4, 1, 0, 4, 1, 0, 0);
 
 class Node;
 
@@ -189,48 +223,88 @@ private:
             return std::make_pair(row, maxCol - colDelta);
         }
     }
+    std::pair<uint_fast8_t,uint_fast8_t> findFarthestPosition(uint_fast16_t values[][4], int_fast8_t row, int_fast8_t col, int_fast8_t rowDelta, int_fast8_t colDelta) const {
+        uint_fast8_t prevRow = row;
+        uint_fast8_t prevCol = col;
+        do {
+            prevRow = row;
+            prevCol = col;
+            row += rowDelta;
+            col += colDelta;
+        } while(row >= 0 && row < 4 && col >= 0 && col < 4 && !values[row][col]);
+        return std::make_pair(prevRow, prevCol);
+    }
+    /** 
+     * measures how smooth the grid is (as if the values of the pieces
+     * were interpreted as elevations). Sums of the pairwise
+     * difference between neighboring tiles (in log space, so it
+     * represents the number of merges that need to happen before they
+     * can merge).  Note that the pieces can be distant
+    */
+    double calculateSmoothness(uint_fast16_t values[][4]) {
+        double smoothness = 0.0;
+        
+        // for(size_t row=0; row<4; row++) {
+        //     for(size_t col=0; col<4; col++) {
+        //         if(values[row][col]) {
+        //             auto value = values[row][col] ;
+        //             for
+        //             for(var direction=1; direction<=2; direction++) {
+        //                 std::pair<uint_fast8_t,uint_fast8_t> targetCell = findFarthestPosition(values, row, col, vector).next;
+
+        //                 if (this.cellOccupied(targetCell)) {
+        //                     var target = this.cellContent(targetCell);
+        //                     var targetValue = Math.log(target.value) / Math.log(2);
+        //                     smoothness -= Math.abs(value - targetValue);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        return smoothness;
+    }
     /* returns the increase in score from this move, or -1 if the move was invalid */
-    int16_t move(Move direction) {
+    int16_t move(const Move& direction) {
         uint_fast16_t values[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
         fillExponents(values);
         bool alreadyMerged[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
         int16_t score = -1;
-        int_fast8_t rowStart = 0;
-        int_fast8_t rowEnd = 4;
-        int_fast8_t rowDelta = 1;
-        int_fast8_t colStart = 0;
-        int_fast8_t colEnd = 4;
-        int_fast8_t colDelta = 1;
-        int_fast8_t flRowDelta = -1;
-        int_fast8_t flColDelta = 0;
-        switch(direction) {
-        case DOWN:
-            rowStart = 3;
-            rowEnd = -1;
-            rowDelta = -1;
-            flRowDelta = 1;
-            break;
-        case LEFT:
-            flRowDelta = 0;
-            flColDelta = -1;
-            break;
-        case RIGHT:
-            colStart = 3;
-            colEnd = -1;
-            colDelta = -1;
-            flRowDelta = 0;
-            flColDelta = 1;
-        default:
-            break;
-        }
-        for(int_fast8_t row=rowStart; row != rowEnd; row += rowDelta) {
-            for(int_fast8_t col=colStart; col != colEnd; col += colDelta) {
+        // int_fast8_t rowStart = 0;
+        // int_fast8_t rowEnd = 4;
+        // int_fast8_t rowDelta = 1;
+        // int_fast8_t colStart = 0;
+        // int_fast8_t colEnd = 4;
+        // int_fast8_t colDelta = 1;
+        // int_fast8_t flRowDelta = -1;
+        // int_fast8_t flColDelta = 0;
+        // switch(direction) {
+        // case DOWN:
+        //     rowStart = 3;
+        //     rowEnd = -1;
+        //     rowDelta = -1;
+        //     flRowDelta = 1;
+        //     break;
+        // case LEFT:
+        //     flRowDelta = 0;
+        //     flColDelta = -1;
+        //     break;
+        // case RIGHT:
+        //     colStart = 3;
+        //     colEnd = -1;
+        //     colDelta = -1;
+        //     flRowDelta = 0;
+        //     flColDelta = 1;
+        // default:
+        //     break;
+        // }
+        for(int_fast8_t row=direction.rowStart; row != direction.rowEnd; row += direction.rowDelta) {
+            for(int_fast8_t col=direction.colStart; col != direction.colEnd; col += direction.colDelta) {
                 auto v = values[row][col];
                 if(!v) {
                     /* the space is empty */
                     continue;
                 }
-                auto finalLocation = findFinalLocation(values, alreadyMerged, row, col, flRowDelta, flColDelta);
+                auto finalLocation = findFinalLocation(values, alreadyMerged, row, col, direction.vectorRowDelta, direction.vectorColDelta);
                 if(finalLocation.first != row || finalLocation.second != col) {
                     auto oldValue = getExponentValue(finalLocation.first, finalLocation.second);
                     int16_t newValue = 0;
@@ -257,20 +331,21 @@ private:
 #endif
 };
 
-enum Player {
+enum class Player : bool {
     HUMAN,
     RANDOM
 };
 
 class Node {
 private:
-    Move move;
+    MoveType move;
     Board board;
     Player player;
+    /* TODO: I think the score can actually go as high as ~120k, so the score variable should probably be upped to uint32_t */
     uint16_t score;
     mutable std::list<Node>* cachedSuccessors;
 public:
-    Node(unsigned seed) : move(START), player(HUMAN), score(0), cachedSuccessors(nullptr) {
+    Node(unsigned seed) : move(Move::START), player(Player::HUMAN), score(0), cachedSuccessors(nullptr) {
         auto rand = std::default_random_engine();
         rand.seed(seed);
         std::uniform_int_distribution<uint_fast8_t> distribution(0,3);
@@ -324,7 +399,23 @@ public:
     void clearSuccessorCache() const {
         delete cachedSuccessors;
     }
-    Move getMove() const { return move; }
+    const Move& getMove() const {
+        switch(move) {
+        case MoveType::UP:
+            return Move::UP;
+        case MoveType::DOWN:
+            return Move::DOWN;
+        case MoveType::LEFT:
+            return Move::LEFT;
+        case MoveType::RIGHT:
+            return Move::RIGHT;
+        case MoveType::START:
+            return Move::START;
+        case MoveType::RAND:
+        default:
+            return Move::RAND;
+        }
+    }
     const Board& getBoard() const { return board; }
     Player getPlayer() const { return player; }
     bool has2048() const {
@@ -341,11 +432,11 @@ public:
     uint16_t getScore() const { return score; }
     /**
      * Heuristic Value:
-     *  MSB | 1 bit       | 16 bits                     | 4 bits                 | 4 bits                                                         | ...
-     *      | always zero | final score, if we got 2048 | number of empty spaces | 16 - number of 2s and 4s that are not bordering an empty space | ...
+     *  MSB | 1 bit       | 16 bits                     | 7 bits                                                                  | ... 
+     *      | always zero | final score, if we got 2048 | number of empty spaces + number of pairs of neighboring matching pieces | ... 
      *
-     *  ... | 7 bits                                         | 3 bits                                     | 16 bits       | 13 bits          | LSB
-     *  ... | number of pairs of neighboring matching pieces | exponent of the largest piece on the board | current score | currently unused |
+     *  ... | 4 bits                                                         | 3 bits                                     | 16 bits       | 17 bits          | LSB
+     *  ... | 16 - number of 2s and 4s that are not bordering an empty space | exponent of the largest piece on the board | current score | currently unused |
      *
      * The value is zero if the game is over and we didn't get 2048.
      */
@@ -361,14 +452,13 @@ public:
         uint_fast16_t values[4][4] = { {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0} };
         board.fillExponents(values);
         auto emptySpaces = (int_fast64_t)board.numEmptySpaces();
-        h |= emptySpaces << 43;
-        auto enclosedTwosFours = (int_fast64_t)16 - (int_fast64_t)board.numEnclosedTwosFours(values);
-        h |= enclosedTwosFours << 39;
         auto matchingPairs = (int_fast64_t)board.numMatchingPairs(values);
-        h |= matchingPairs << 32;
+        h |= (emptySpaces + matchingPairs) << 40;
+        auto enclosedTwosFours = (int_fast64_t)16 - (int_fast64_t)board.numEnclosedTwosFours(values);
+        h |= enclosedTwosFours << 36;
         // auto largestExponent = (int_fast64_t)board.getLargestExponent();
-        // h |= largestExponent << 29;
-        h |= (int_fast64_t)(getScore()) << 13;
+        // h |= largestExponent << 33;
+        h |= (int_fast64_t)(getScore()) << 17;
         return h;
     }
 public:
@@ -388,7 +478,7 @@ public:
             if(has2048()) {
                 /* the game is over if we already have gotten 2048! */
                 /* so there are no successors */
-            } else if(player == RANDOM) {
+            } else if(player == Player::RANDOM) {
                 /* add a random 2 or 4 to an empty space */
                 for(uint_fast8_t row=0; row<4; ++row) {
                     for(uint_fast8_t col=0; col<4; ++col) {
@@ -396,18 +486,18 @@ public:
                             for(auto value : {1, 2}) {
                                 auto newNode = cachedSuccessors->emplace(cachedSuccessors->end(), *this);
                                 newNode->board.setValue(row, col, value);
-                                newNode->player = HUMAN;
-                                newNode->move = RAND;
+                                newNode->player = Player::HUMAN;
+                                newNode->move = MoveType::RAND;
                             }
                         }
                     }
                 }
             } else {
-                for(const Move& move : {UP, DOWN, LEFT, RIGHT}) {
+                for(const Move& move : {Move::UP, Move::DOWN, Move::LEFT, Move::RIGHT}) {
                     Board newBoard(board);
                     int16_t addedScore = newBoard.move(move);
                     if(addedScore >= 0) {
-                        cachedSuccessors->emplace_back(move, newBoard, RANDOM, score + addedScore);
+                        cachedSuccessors->emplace_back(move, newBoard, Player::RANDOM, score + addedScore);
                     }
                 }
             }
@@ -485,16 +575,16 @@ std::ostream& operator<<(std::ostream& stream, const Board& board) {
 
 std::ostream& operator<<(std::ostream& stream, const Move& move) {
     switch(move) {
-    case UP:
+    case MoveType::UP:
         stream << "^";
         break;
-    case LEFT:
+    case MoveType::LEFT:
         stream << "<";
         break;
-    case DOWN:
+    case MoveType::DOWN:
         stream << "V";
         break;
-    case RIGHT:
+    case MoveType::RIGHT:
         stream << ">";
         break;
     default:
@@ -512,9 +602,9 @@ int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_f
     if(depth == 0 || node.isGameOver()) {
         return node.getHeuristic();
     }
-    if(node.getPlayer() == HUMAN) {
+    if(node.getPlayer() == Player::HUMAN) {
         for(auto& succ : node.getSuccessors()) {
-            alpha = std::max(alpha, alphabeta(succ, depth - 1, alpha, beta));
+            alpha = std::max(alpha, alphabeta(succ, depth, alpha, beta));
             if(beta <= alpha) {
                 break;
             }
@@ -547,7 +637,7 @@ inline int_fast64_t alphabeta(const Node& node, size_t maxDepth) {
 }
 
 #if USE_CURSES
-Move printState(const Node& node) {
+MoveType printState(const Node& node) {
     clear();
     std::stringstream ss;
     ss << node;
@@ -573,21 +663,21 @@ Move printState(const Node& node) {
     }
 
     if(gameOver) {
-        return START;
+        return Move::START;
     }
 
-    Move suggestedMove = START;
+    MoveType suggestedMove = MoveType::START;
     int_fast64_t bestScore = -1;
     uint_fast8_t searchDepth;
     uint_fast8_t emptySpaces = node.getBoard().numEmptySpaces();
     if(emptySpaces > 8) {
-        searchDepth = 4;
+        searchDepth = 2;
     } else if(emptySpaces > 6) {
-        searchDepth = 4;
+        searchDepth = 2;
     } else if(emptySpaces > 4) {
-        searchDepth = 5;
+        searchDepth = 3;
     } else {
-        searchDepth = 6;
+        searchDepth = 4;
     }
     //mvprintw(3, 3, "%d", searchDepth);
     for(auto& succ : node.getSuccessors()) {
@@ -600,16 +690,16 @@ Move printState(const Node& node) {
     if(bestScore >= 0) {
         std::string suggestion = "Suggested Move: ";
         switch(suggestedMove) {
-        case UP:
+        case MoveType::UP:
             suggestion += "^";
             break;
-        case DOWN:
+        case MoveType::DOWN:
             suggestion += "V";
             break;
-        case LEFT:
+        case MoveType::LEFT:
             suggestion += "<";
             break;
-        case RIGHT:
+        case MoveType::RIGHT:
             suggestion += ">";
             break;
         default:
@@ -650,10 +740,10 @@ int main(int argc, char** argv) {
 #endif
 
     for(; !node.isGameOver();) {
-        if(node.getPlayer() == HUMAN) {
-            Move move = START;
+        if(node.getPlayer() == Player::HUMAN) {
+            MoveType move = Move::START;
 #if USE_CURSES
-            Move suggestedMove = printState(node);
+            MoveType suggestedMove = printState(node);
             int c = getch();
 #else
             std::cout << node << std::endl;
@@ -668,7 +758,7 @@ int main(int argc, char** argv) {
             case 'w':
             case 'W':
             case '^':
-                move = UP;
+                move = MoveType::UP;
                 break;
 #if USE_CURSES
             case KEY_DOWN:
@@ -677,7 +767,7 @@ int main(int argc, char** argv) {
             case 'S':
             case 'V':
             case 'v':
-                move = DOWN;
+                move = MoveType::DOWN;
                 break;
 #if USE_CURSES
             case KEY_LEFT:
@@ -685,7 +775,7 @@ int main(int argc, char** argv) {
             case 'a':
             case 'A':
             case '<':
-                move = LEFT;
+                move = MoveType::LEFT;
                 break;
 #if USE_CURSES
             case KEY_RIGHT:
@@ -693,7 +783,7 @@ int main(int argc, char** argv) {
             case 'd':
             case 'D':
             case '>':
-                move = RIGHT;
+                move = MoveType::RIGHT;
                 break;
 #if USE_CURSES
             case 'q':
@@ -707,7 +797,7 @@ int main(int argc, char** argv) {
 #if USE_CURSES
             case KEY_ENTER:
             case '\n':
-                if(suggestedMove != START) {
+                if(suggestedMove != Move::START) {
                     move = suggestedMove;
                 }
                 break;
@@ -718,7 +808,7 @@ int main(int argc, char** argv) {
                 }
             }
             if(runAutomated) {
-                assert(suggestedMove != START);
+                assert(suggestedMove != Move::START);
                 move = suggestedMove;
             }
             for(auto& succ : node.getSuccessors()) {
