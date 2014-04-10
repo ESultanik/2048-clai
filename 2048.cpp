@@ -675,11 +675,11 @@ AlphaBetaResult alphabeta(const Node& node, const std::function<TerminationCondi
             auto a = alphabeta(succ, terminateCondition, depth, alpha, beta);
             alpha = std::max(alpha, a.value);
             if(a.value > bestValue || bestMove == MoveType::GAMEOVER) {
-                bestMove = a.move;
+                bestMove = succ.getMove();
                 bestValue = a.value;
             }
             if(a.terminationCondition == TerminationCondition::ABORT) {
-                return AlphaBetaResult(alpha, MoveType::GAMEOVER, a.terminationCondition);
+                return AlphaBetaResult(alpha, bestMove, a.terminationCondition);
             } else if(beta <= alpha) {
                 break;
             }
@@ -714,7 +714,7 @@ inline AlphaBetaResult alphabeta(const Node& node, const std::function<Terminati
     return alphabeta(node, terminateCondition, 0, std::numeric_limits<int_fast64_t>::min(), std::numeric_limits<int_fast64_t>::max());
 }
 
-AlphaBetaResult suggestMove(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition) {
+AlphaBetaResult suggestMoveParallel(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition) {
     int_fast64_t bestScore = -1;
     MoveType suggestedMove = MoveType::START;
     for(auto& succ : node.getSuccessors()) {
@@ -728,6 +728,10 @@ AlphaBetaResult suggestMove(const Node& node, const std::function<TerminationCon
         }
     }
     return AlphaBetaResult(bestScore, suggestedMove, TerminationCondition::CONTINUE);
+}
+
+inline AlphaBetaResult suggestMove(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition) {
+    return alphabeta(node, terminateCondition);
 }
 
 inline AlphaBetaResult suggestMove(const Node& node, size_t maxDepth) {
@@ -789,7 +793,7 @@ MoveType printState(const Node& node) {
     }
 
     //auto suggestion = suggestMove(node, 3);
-    auto suggestion = suggestMoveWithDeadline(node, 1500);
+    auto suggestion = suggestMoveWithDeadline(node, 100);
     int_fast64_t bestScore = suggestion.value;
     MoveType suggestedMove = suggestion.move;
     if(bestScore >= 0) {
