@@ -645,64 +645,101 @@ std::ostream& operator<<(std::ostream& stream, const Node& node) {
     return stream;
 }
 
-int_fast64_t alphabeta(const Node& node, const std::function<bool(const Node& node, size_t depth)>& terminateCondition, size_t depth, int_fast64_t alpha, int_fast64_t beta) {
-    if(terminateCondition(node, depth) || node.isGameOver()) {
-        return node.getHeuristic();
+enum class TerminationCondition {
+    CONTINUE,
+    END,
+    ABORT
+};
+
+std::pair<int_fast64_t,TerminationCondition> alphabeta(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition, size_t depth, int_fast64_t alpha, int_fast64_t beta) {
+    auto condition = terminateCondition(node, depth);
+    if(condition == TerminationCondition::ABORT) {
+        return std::make_pair(node.getPlayer() == Player::HUMAN ? alpha : beta, condition);
+    } else if(condition == TerminationCondition::END || node.isGameOver()) {
+        return std::make_pair(node.getHeuristic(), condition);
     }
     if(node.getPlayer() == Player::HUMAN) {
         for(auto& succ : node.getSuccessors()) {
-            alpha = std::max(alpha, alphabeta(succ, terminateCondition, depth, alpha, beta));
-            if(beta <= alpha) {
+            auto a = alphabeta(succ, terminateCondition, depth, alpha, beta);
+            alpha = std::max(alpha, a.first);
+            if(a.second == TerminationCondition::ABORT) {
+                return std::make_pair(alpha, a.second);
+            } else if(beta <= alpha) {
                 break;
             }
         }
-        return alpha;
+        return std::make_pair(alpha, TerminationCondition::CONTINUE);
     } else {
 #if 1
         /* regular MiniMax: */
         for(auto& succ : node.getSuccessors()) {
-            beta = std::min(beta, alphabeta(succ, terminateCondition, depth + 1, alpha, beta));
-            if(beta <= alpha) {
+            auto b = alphabeta(succ, terminateCondition, depth + 1, alpha, beta);
+            beta = std::min(beta, b.first);
+            if(b.second == TerminationCondition::ABORT) {
+                return std::make_pair(beta, b.second);
+            } else if(beta <= alpha) {
                 break;
             }
         }
-        return beta;
+        return std::make_pair(beta, TerminationCondition::CONTINUE);
 #else 
         /* ExpectiMax: */
         long double average = 0.0;
         auto& successors = node.getSuccessors();
         for(auto& succ : successors) {
-            average += (long double)alphabeta(succ, terminateCondition, depth + 1, alpha, beta) / (long double)(successors.size());
+            average += (long double)alphabeta(succ, terminateCondition, depth + 1, alpha, beta) / (long double)(successors.size()).first;
         }
-        return std::min(beta, (int_fast64_t)(average + 0.5));
+        return std::make_pair(std::min(beta, (int_fast64_t)(average + 0.5)), TerminationCondition::CONTINUE);
 #endif
     }
 }
 
-inline int_fast64_t alphabeta(const Node& node, const std::function<bool(const Node& node, size_t depth)>& terminateCondition) {
+inline std::pair<int_fast64_t,TerminationCondition> alphabeta(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition) {
     return alphabeta(node, terminateCondition, 0, std::numeric_limits<int_fast64_t>::min(), std::numeric_limits<int_fast64_t>::max());
 }
 
-std::pair<int_fast64_t,MoveType> suggestMove(const Node& node, size_t maxDepth) {
+std::tuple<int_fast64_t,MoveType,TerminationCondition> suggestMove(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition) {
     int_fast64_t bestScore = -1;
     MoveType suggestedMove = MoveType::START;
     for(auto& succ : node.getSuccessors()) {
-        auto ab = alphabeta(succ, [maxDepth](const Node&, size_t depth) -> bool { return depth >= maxDepth; });
-        if(ab > bestScore) {
-            bestScore = ab;
+        auto ab = alphabeta(succ, terminateCondition);
+        if(ab.second == TerminationCondition::ABORT) {
+            return std::make_tuple(bestScore, suggestedMove, TerminationCondition::ABORT);
+        }
+        if(ab.first > bestScore) {
+            bestScore = std::get<0>(ab);
             suggestedMove = succ.getMove();
         }
     }
-    return std::make_pair(bestScore, suggestedMove);
+    return std::make_tuple(bestScore, suggestedMove, TerminationCondition::CONTINUE);
 }
 
-MoveType suggestMoveWithDeadline(const Node& node, unsigned long deadlineInMs) {
-    auto startTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+inline std::tuple<int_fast64_t,MoveType,TerminationCondition> suggestMove(const Node& node, size_t maxDepth) {
+    return suggestMove(node, [maxDepth](const Node&, size_t depth) -> TerminationCondition { return depth >= maxDepth ? TerminationCondition::END : TerminationCondition::CONTINUE; });
+}
 
-    do {
-        
-    } while(startTime + std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() < deadlineInMs);
-    return MoveType::START;
+std::tuple<int_fast64_t,MoveType,TerminationCondition> suggestMoveWithDeadline(const Node& node, unsigned long deadlineInMs) {
+    auto startTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();    
+
+    size_t maxDepth = 1;
+    std::tuple<int_fast64_t,MoveType,TerminationCondition> bestSuggestion;
+    for(;; ++maxDepth) {
+        auto newSuggestion = suggestMove(node, [maxDepth,startTime,deadlineInMs](const Node&, size_t depth) -> TerminationCondition {
+                if(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - startTime >= (long long)deadlineInMs && maxDepth > 1) {
+                    return TerminationCondition::ABORT;
+                } else if(depth >= maxDepth) {
+                    return TerminationCondition::END;
+                } else {
+                    return TerminationCondition::CONTINUE;
+                }
+            });
+        if(std::get<2>(newSuggestion) == TerminationCondition::ABORT && maxDepth > 1) {
+            break;
+        } else {
+            bestSuggestion = newSuggestion;
+        }
+    }
+    return bestSuggestion;
 }
 
 #if USE_CURSES
@@ -735,9 +772,10 @@ MoveType printState(const Node& node) {
         return Move::START;
     }
 
-    auto suggestion = suggestMove(node, 3);
-    int_fast64_t bestScore = suggestion.first;
-    MoveType suggestedMove = suggestion.second;
+    //auto suggestion = suggestMove(node, 3);
+    auto suggestion = suggestMoveWithDeadline(node, 1500);
+    int_fast64_t bestScore = std::get<0>(suggestion);
+    MoveType suggestedMove = std::get<1>(suggestion);
     if(bestScore >= 0) {
         std::string suggestion = "Suggested Move: ";
         switch(suggestedMove) {
