@@ -645,13 +645,13 @@ std::ostream& operator<<(std::ostream& stream, const Node& node) {
     return stream;
 }
 
-int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_fast64_t beta) {
-    if(depth == 0 || node.isGameOver()) {
+int_fast64_t alphabeta(const Node& node, const std::function<bool(const Node& node, size_t depth)>& terminateCondition, size_t depth, int_fast64_t alpha, int_fast64_t beta) {
+    if(terminateCondition(node, depth) || node.isGameOver()) {
         return node.getHeuristic();
     }
     if(node.getPlayer() == Player::HUMAN) {
         for(auto& succ : node.getSuccessors()) {
-            alpha = std::max(alpha, alphabeta(succ, depth, alpha, beta));
+            alpha = std::max(alpha, alphabeta(succ, terminateCondition, depth, alpha, beta));
             if(beta <= alpha) {
                 break;
             }
@@ -661,7 +661,7 @@ int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_f
 #if 1
         /* regular MiniMax: */
         for(auto& succ : node.getSuccessors()) {
-            beta = std::min(beta, alphabeta(succ, depth - 1, alpha, beta));
+            beta = std::min(beta, alphabeta(succ, terminateCondition, depth + 1, alpha, beta));
             if(beta <= alpha) {
                 break;
             }
@@ -672,15 +672,37 @@ int_fast64_t alphabeta(const Node& node, size_t depth, int_fast64_t alpha, int_f
         long double average = 0.0;
         auto& successors = node.getSuccessors();
         for(auto& succ : successors) {
-            average += (long double)alphabeta(succ, depth - 1, alpha, beta) / (long double)(successors.size());
+            average += (long double)alphabeta(succ, terminateCondition, depth + 1, alpha, beta) / (long double)(successors.size());
         }
         return std::min(beta, (int_fast64_t)(average + 0.5));
 #endif
     }
 }
 
-inline int_fast64_t alphabeta(const Node& node, size_t maxDepth) {
-    return alphabeta(node, maxDepth, std::numeric_limits<int_fast64_t>::min(), std::numeric_limits<int_fast64_t>::max());
+inline int_fast64_t alphabeta(const Node& node, const std::function<bool(const Node& node, size_t depth)>& terminateCondition) {
+    return alphabeta(node, terminateCondition, 0, std::numeric_limits<int_fast64_t>::min(), std::numeric_limits<int_fast64_t>::max());
+}
+
+std::pair<int_fast64_t,MoveType> suggestMove(const Node& node, size_t maxDepth) {
+    int_fast64_t bestScore = -1;
+    MoveType suggestedMove = MoveType::START;
+    for(auto& succ : node.getSuccessors()) {
+        auto ab = alphabeta(succ, [maxDepth](const Node&, size_t depth) -> bool { return depth >= maxDepth; });
+        if(ab > bestScore) {
+            bestScore = ab;
+            suggestedMove = succ.getMove();
+        }
+    }
+    return std::make_pair(bestScore, suggestedMove);
+}
+
+MoveType suggestMoveWithDeadline(const Node& node, unsigned long deadlineInMs) {
+    auto startTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    do {
+        
+    } while(startTime + std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() < deadlineInMs);
+    return MoveType::START;
 }
 
 #if USE_CURSES
@@ -713,27 +735,9 @@ MoveType printState(const Node& node) {
         return Move::START;
     }
 
-    MoveType suggestedMove = MoveType::START;
-    int_fast64_t bestScore = -1;
-    uint_fast8_t searchDepth;
-    uint_fast8_t emptySpaces = node.getBoard().numEmptySpaces();
-    if(emptySpaces > 8) {
-        searchDepth = 2;
-    } else if(emptySpaces > 6) {
-        searchDepth = 2;
-    } else if(emptySpaces > 4) {
-        searchDepth = 3;
-    } else {
-        searchDepth = 4;
-    }
-    //mvprintw(3, 3, "%d", searchDepth);
-    for(auto& succ : node.getSuccessors()) {
-        auto ab = alphabeta(succ, searchDepth);
-        if(ab > bestScore) {
-            bestScore = ab;
-            suggestedMove = succ.getMove();
-        }
-    }
+    auto suggestion = suggestMove(node, 3);
+    int_fast64_t bestScore = suggestion.first;
+    MoveType suggestedMove = suggestion.second;
     if(bestScore >= 0) {
         std::string suggestion = "Suggested Move: ";
         switch(suggestedMove) {
