@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cassert>
 #include <memory>
+#include <cstring>
 
 #define USE_CURSES 1
 
@@ -821,7 +822,7 @@ MoveType printState(const Node& node, bool runAutomated) {
                 mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-14)/2,"No Suggestion!");
             }
 
-            mvprintw((height - lines.size())/2 + 4 + lines.size(),(width-19)/2, "Searching to Ply: %u", (unsigned)(maxDepth - 1 * 2));
+            mvprintw((height - lines.size())/2 + 4 + lines.size(),(width-19)/2, "Searching to Ply: %u", (unsigned int)(maxDepth - 1 * 2));
 
             refresh();
         });
