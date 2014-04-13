@@ -428,6 +428,7 @@ public:
     }
     void clearSuccessorCache() const {
         delete cachedSuccessors;
+        cachedSuccessors = nullptr;
     }
     const Move& getMove() const {
         switch(move) {
@@ -743,9 +744,8 @@ typedef std::function<void(size_t maxDepth,const AlphaBetaResult& result)> Alpha
 AlphaBetaResult suggestMoveWithDeadline(const Node& node, unsigned long deadlineInMs, const AlphaBetaCallback& statusCallback = [](size_t, const AlphaBetaResult&) {}) {
     auto startTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    size_t maxDepth = 1;
     AlphaBetaResult bestSuggestion;
-    for(;; ++maxDepth) {
+    for(size_t maxDepth = 1;; ++maxDepth) {
         auto newSuggestion = suggestMove(node, [maxDepth,startTime,deadlineInMs](const Node&, size_t depth) -> TerminationCondition {
                 if(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - startTime >= (long long)deadlineInMs && maxDepth > 1) {
                     return TerminationCondition::ABORT;
@@ -766,7 +766,7 @@ AlphaBetaResult suggestMoveWithDeadline(const Node& node, unsigned long deadline
 }
 
 #if USE_CURSES
-MoveType printState(const Node& node) {
+MoveType printState(const Node& node, bool runAutomated) {
     clear();
     std::stringstream ss;
     ss << node;
@@ -796,7 +796,7 @@ MoveType printState(const Node& node) {
     }
 
     //auto suggestion = suggestMove(node, 3);
-    auto suggestion = suggestMoveWithDeadline(node, 300, [height, width, &lines](size_t maxDepth, const AlphaBetaResult& result) {
+    auto suggestion = suggestMoveWithDeadline(node, runAutomated ? 800 : 300, [height, width, &lines](size_t maxDepth, const AlphaBetaResult& result) {
             if(result.value >= 0) {
                 std::string suggestion = "Suggested Move: ";
                 switch(result.move) {
@@ -857,7 +857,7 @@ int main(int argc, char** argv) {
         if(node.getPlayer() == Player::HUMAN) {
             MoveType move = Move::START;
 #if USE_CURSES
-            MoveType suggestedMove = printState(node);
+            MoveType suggestedMove = printState(node, runAutomated);
             int c = getch();
 #else
             std::cout << node << std::endl;
@@ -938,7 +938,7 @@ int main(int argc, char** argv) {
 
     if(runAutomated) {
 #if USE_CURSES
-        printState(node);
+        printState(node, true);
         node.clearSuccessorCache();
         timeout(-1);
         getch();
