@@ -76,7 +76,7 @@ uint_fast8_t boardShifts[4][4] = {
 
 uint_fast64_t boardMasks[4][4] {
     { (uint64_t)0b1111, (uint64_t)0b1111 << 4, (uint64_t)0b1111 << 8, (uint64_t)0b1111 << 12 },
-    { (uint64_t)0b1111 << 16, (uint64_t)0b1111 << 20, (uint64_t)0b1111 << 4, (uint64_t)0b1111 << 28 },
+    { (uint64_t)0b1111 << 16, (uint64_t)0b1111 << 20, (uint64_t)0b1111 << 24, (uint64_t)0b1111 << 28 },
     { (uint64_t)0b1111 << 32, (uint64_t)0b1111 << 36, (uint64_t)0b1111 << 40, (uint64_t)0b1111 << 44 },
     { (uint64_t)0b1111 << 48, (uint64_t)0b1111 << 52, (uint64_t)0b1111 << 56, (uint64_t)0b1111 << 60 }
 };
