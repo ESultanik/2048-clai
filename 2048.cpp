@@ -758,9 +758,10 @@ AlphaBetaResult suggestMoveWithDeadline(const Node& node, unsigned long deadline
     auto startTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     AlphaBetaResult bestSuggestion;
-    for(size_t maxDepth = 1;; ++maxDepth) {
-        auto newSuggestion = suggestMove(node, [maxDepth,startTime,deadlineInMs](const Node&, size_t depth) -> TerminationCondition {
-                if(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - startTime >= (long long)deadlineInMs && maxDepth > 1) {
+    const size_t startingDepth = 2;
+    for(size_t maxDepth = startingDepth;; ++maxDepth) {
+        auto newSuggestion = suggestMove(node, [startingDepth,maxDepth,startTime,deadlineInMs](const Node&, size_t depth) -> TerminationCondition {
+                if(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - startTime >= (long long)deadlineInMs && maxDepth > startingDepth) {
                     return TerminationCondition::ABORT;
                 } else if(depth >= maxDepth) {
                     return TerminationCondition::END;
@@ -768,7 +769,7 @@ AlphaBetaResult suggestMoveWithDeadline(const Node& node, unsigned long deadline
                     return TerminationCondition::CONTINUE;
                 }
             });
-        if(newSuggestion.terminationCondition == TerminationCondition::ABORT && maxDepth > 1) {
+        if(newSuggestion.terminationCondition == TerminationCondition::ABORT && maxDepth > startingDepth) {
             break;
         } else {
             bestSuggestion = newSuggestion;
@@ -808,7 +809,7 @@ MoveType printState(const Node& node, bool runAutomated) {
         return Move::START;
     }
 
-    //auto suggestion = suggestMove(node, 3);
+    //auto suggestion = suggestMove(node, 5);
     auto suggestion = suggestMoveWithDeadline(node, runAutomated ? 800 : 300, [height, width, &lines](size_t maxDepth, const AlphaBetaResult& result) {
             if(result.value >= 0) {
                 std::string suggestion = "Suggested Move: ";
@@ -834,7 +835,7 @@ MoveType printState(const Node& node, bool runAutomated) {
                 mvprintw((height - lines.size())/2 + 2 + lines.size(),(width-14)/2,"No Suggestion!");
             }
 
-            mvprintw((height - lines.size())/2 + 4 + lines.size(),(width-19)/2, "Searching to Ply: %u", (unsigned int)(maxDepth - 1 * 2));
+            mvprintw((height - lines.size())/2 + 4 + lines.size(),(width-19)/2, "Searching to Ply: %lu", (unsigned long)((maxDepth - 1) * 2));
 
             refresh();
         });
