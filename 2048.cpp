@@ -559,6 +559,19 @@ public:
                     Board newBoard(board);
                     int16_t addedScore = newBoard.move(move);
                     if(addedScore >= 0) {
+                        // Node newNode(move, newBoard, Player::RANDOM, score + addedScore);
+                        // auto h = newNode.getHeuristic();
+                        // bool added = false;
+                        // for(auto iter = cachedSuccessors->begin(), end = cachedSuccessors->end(); iter != end; ++iter) {
+                        //     if(h > iter->getHeuristic()) {
+                        //         cachedSuccessors->insert(iter, std::move(newNode));
+                        //         added = true;
+                        //         break;
+                        //     }
+                        // }
+                        // if(!added) {
+                        //     cachedSuccessors->push_back(std::move(newNode));
+                        // }
                         cachedSuccessors->emplace_back(move, newBoard, Player::RANDOM, score + addedScore);
                     }
                 }
@@ -670,48 +683,57 @@ struct AlphaBetaResult {
     int_fast64_t         value;
     MoveType             move;
     TerminationCondition terminationCondition;
+    size_t               prunedNodes;
 
-    AlphaBetaResult() : value(0), move(MoveType::GAMEOVER), terminationCondition(TerminationCondition::ABORT) {}
-    AlphaBetaResult(int_fast64_t value, MoveType move, TerminationCondition terminationCondition) : value(value), move(move), terminationCondition(terminationCondition) {}
+    AlphaBetaResult() : value(0), move(MoveType::GAMEOVER), terminationCondition(TerminationCondition::ABORT), prunedNodes(0) {}
+    AlphaBetaResult(int_fast64_t value, MoveType move, TerminationCondition terminationCondition, size_t prunedNodes) : value(value), move(move), terminationCondition(terminationCondition), prunedNodes(prunedNodes) {}
 };
 
 AlphaBetaResult alphabeta(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition, size_t depth, int_fast64_t alpha, int_fast64_t beta) {
     auto condition = terminateCondition(node, depth);
     if(condition == TerminationCondition::ABORT) {
-        return AlphaBetaResult(node.getPlayer() == Player::HUMAN ? alpha : beta, MoveType::GAMEOVER, condition);
+        return AlphaBetaResult(node.getPlayer() == Player::HUMAN ? alpha : beta, MoveType::GAMEOVER, condition, 0);
     } else if(condition == TerminationCondition::END || node.isGameOver()) {
-        return AlphaBetaResult(node.getHeuristic(), MoveType::GAMEOVER, condition);
+        return AlphaBetaResult(node.getHeuristic(), MoveType::GAMEOVER, condition, 0);
     }
     if(node.getPlayer() == Player::HUMAN) {
         MoveType bestMove = MoveType::GAMEOVER;
         int_fast64_t bestValue = std::numeric_limits<int_fast64_t>::min();
+        size_t pruned = node.getSuccessors().size();
         for(auto& succ : node.getSuccessors()) {
             auto a = alphabeta(succ, terminateCondition, depth, alpha, beta);
             alpha = std::max(alpha, a.value);
+            pruned += a.prunedNodes;
+            --pruned;
             if(a.value > bestValue || bestMove == MoveType::GAMEOVER) {
                 bestMove = succ.getMove();
                 bestValue = a.value;
             }
             if(a.terminationCondition == TerminationCondition::ABORT) {
-                return AlphaBetaResult(alpha, bestMove, a.terminationCondition);
+                return AlphaBetaResult(alpha, bestMove, a.terminationCondition, pruned);
             } else if(beta <= alpha) {
+                succ.clearSuccessorCache();
                 break;
             }
         }
-        return AlphaBetaResult(alpha, bestMove, TerminationCondition::CONTINUE);
+        return AlphaBetaResult(alpha, bestMove, TerminationCondition::CONTINUE, pruned);
     } else {
 #if 1
         /* regular MiniMax: */
+        size_t pruned = node.getSuccessors().size();
         for(auto& succ : node.getSuccessors()) {
             auto b = alphabeta(succ, terminateCondition, depth + 1, alpha, beta);
             beta = std::min(beta, b.value);
+            pruned += b.prunedNodes;
+            --pruned;
             if(b.terminationCondition == TerminationCondition::ABORT) {
-                return AlphaBetaResult(beta, MoveType::GAMEOVER, b.terminationCondition);
+                return AlphaBetaResult(beta, MoveType::GAMEOVER, b.terminationCondition, pruned);
             } else if(beta <= alpha) {
+                succ.clearSuccessorCache();
                 break;
             }
         }
-        return AlphaBetaResult(beta, MoveType::RAND, TerminationCondition::CONTINUE);
+        return AlphaBetaResult(beta, MoveType::RAND, TerminationCondition::CONTINUE, pruned);
 #else 
         /* ExpectiMax: */
         long double average = 0.0;
@@ -719,7 +741,7 @@ AlphaBetaResult alphabeta(const Node& node, const std::function<TerminationCondi
         for(auto& succ : successors) {
             average += (long double)alphabeta(succ, terminateCondition, depth + 1, alpha, beta) / (long double)(successors.size()).value;
         }
-        return AlphaBetaResult(std::min(beta, (int_fast64_t)(average + 0.5)), MoveType::RAND, TerminationCondition::CONTINUE);
+        return AlphaBetaResult(std::min(beta, (int_fast64_t)(average + 0.5)), MoveType::RAND, TerminationCondition::CONTINUE, 0);
 #endif
     }
 }
@@ -734,14 +756,14 @@ AlphaBetaResult suggestMoveParallel(const Node& node, const std::function<Termin
     for(auto& succ : node.getSuccessors()) {
         auto ab = alphabeta(succ, terminateCondition);
         if(ab.terminationCondition == TerminationCondition::ABORT) {
-            return AlphaBetaResult(bestScore, suggestedMove, TerminationCondition::ABORT);
+            return AlphaBetaResult(bestScore, suggestedMove, TerminationCondition::ABORT, 0);
         }
         if(ab.value > bestScore) {
             bestScore = ab.value;
             suggestedMove = succ.getMove();
         }
     }
-    return AlphaBetaResult(bestScore, suggestedMove, TerminationCondition::CONTINUE);
+    return AlphaBetaResult(bestScore, suggestedMove, TerminationCondition::CONTINUE, 0);
 }
 
 inline AlphaBetaResult suggestMove(const Node& node, const std::function<TerminationCondition(const Node& node, size_t depth)>& terminateCondition) {
@@ -836,6 +858,7 @@ MoveType printState(const Node& node, unsigned long aiTimeout) {
             }
 
             mvprintw((height - lines.size())/2 + 4 + lines.size(),(width-19)/2, "Searching to Ply: %lu", (unsigned long)((maxDepth - 1) * 2));
+            mvprintw((height - lines.size())/2 + 5 + lines.size(),(width-15)/2, "Pruned Nodes: %lu", (unsigned long)(result.prunedNodes));
 
             refresh();
         });
