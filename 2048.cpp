@@ -67,6 +67,20 @@ const Move Move::RAND(MoveType::RAND, 0, 4, 1, 0, 4, 1, 0, 0);
 
 class Node;
 
+uint_fast8_t boardShifts[4][4] = {
+    { 0, 4, 8, 12 },
+    { 16, 20, 24, 28 },
+    { 32, 36, 40, 44 },
+    { 48, 52, 56, 60 }
+};
+
+uint_fast64_t boardMasks[4][4] {
+    { (uint64_t)0b1111, (uint64_t)0b1111 << 4, (uint64_t)0b1111 << 8, (uint64_t)0b1111 << 12 },
+    { (uint64_t)0b1111 << 16, (uint64_t)0b1111 << 20, (uint64_t)0b1111 << 4, (uint64_t)0b1111 << 28 },
+    { (uint64_t)0b1111 << 32, (uint64_t)0b1111 << 36, (uint64_t)0b1111 << 40, (uint64_t)0b1111 << 44 },
+    { (uint64_t)0b1111 << 48, (uint64_t)0b1111 << 52, (uint64_t)0b1111 << 56, (uint64_t)0b1111 << 60 }
+};
+
 class Board {
 private:
     uint64_t rawBoard;
@@ -75,9 +89,7 @@ public:
     Board(const Board& copy) : rawBoard(copy.rawBoard) {}
 private:
     inline uint_fast8_t getExponentValue(uint_fast8_t row, uint_fast8_t col) const {
-        uint_fast8_t shift = (row * 16) + (col * 4);
-        uint64_t mask = (uint64_t)0b1111 << shift;
-        return (rawBoard & mask) >> shift;
+        return (rawBoard & boardMasks[row][col]) >> boardShifts[row][col];
     }
 public:
     inline uint_fast16_t getValue(uint_fast8_t row, uint_fast8_t col) const {
