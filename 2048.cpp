@@ -780,7 +780,7 @@ AlphaBetaResult suggestMoveWithDeadline(const Node& node, unsigned long deadline
 }
 
 #if USE_CURSES
-MoveType printState(const Node& node, bool runAutomated) {
+MoveType printState(const Node& node, unsigned long aiTimeout) {
     clear();
     std::stringstream ss;
     ss << node;
@@ -810,7 +810,7 @@ MoveType printState(const Node& node, bool runAutomated) {
     }
 
     //auto suggestion = suggestMove(node, 5);
-    auto suggestion = suggestMoveWithDeadline(node, runAutomated ? 800 : 300, [height, width, &lines](size_t maxDepth, const AlphaBetaResult& result) {
+    auto suggestion = suggestMoveWithDeadline(node, aiTimeout, [height, width, &lines](size_t maxDepth, const AlphaBetaResult& result) {
             if(result.value >= 0) {
                 std::string suggestion = "Suggested Move: ";
                 switch(result.move) {
@@ -847,7 +847,31 @@ MoveType printState(const Node& node, bool runAutomated) {
 int main(int argc, char** argv) {
     Node node;//(8);//({std::make_tuple(1, 1, 1), std::make_tuple(3, 2, 1)});
 
-    bool runAutomated = (argc == 2) && !strcmp(argv[1], "-a");
+    bool runAutomated = false;
+    bool printUsage = false;
+    unsigned long aiTimeout = 300;
+    
+    bool nextIsTimeout = false;
+
+    for(int i=1; i<argc; ++i) {
+        if(nextIsTimeout) {
+            aiTimeout = (unsigned long)atol(argv[i]);
+            nextIsTimeout = false;
+        } else {
+            runAutomated = runAutomated || !strcmp(argv[i], "-a");
+            nextIsTimeout = !strcmp(argv[i], "-t");
+            printUsage = printUsage || !strcmp(argv[i], "-h") || !strcmp(argv[i], "--help") || !strcmp(argv[i], "-?");
+        }
+    }
+
+    if(printUsage) {
+        std::cerr << "Usage: 2048 [-a] [-t TIMEOUT_MILLISECONDS] [-h | --help]" << std::endl << std::endl;
+        std::cerr << "\t-a\tRun automated, with the AI playing as the human" << std::endl;
+        std::cerr << "\t-t\tTimeout for the AI player in milliseconds" << std::endl;
+        std::cerr << "\t-h\tPrint this help message" << std::endl;
+        std::cerr << std::endl;
+        return 0;
+    }
 
 #if USE_CURSES
     initscr();
@@ -871,7 +895,7 @@ int main(int argc, char** argv) {
         if(node.getPlayer() == Player::HUMAN) {
             MoveType move = Move::START;
 #if USE_CURSES
-            MoveType suggestedMove = printState(node, runAutomated);
+            MoveType suggestedMove = printState(node, aiTimeout);
             int c = getch();
 #else
             std::cout << node << std::endl;
@@ -952,7 +976,7 @@ int main(int argc, char** argv) {
 
     if(runAutomated) {
 #if USE_CURSES
-        printState(node, true);
+        printState(node, aiTimeout);
         node.clearSuccessorCache();
         timeout(-1);
         getch();
