@@ -542,6 +542,10 @@ public:
                 /* so there are no successors */
             } else if(player == Player::RANDOM) {
                 /* add a random 2 or 4 to an empty space */
+                /* note that getRandomSuccessorForComputer() makes
+                   assumptions about the ordering of these successors;
+                   if you change the ordering, you will need to change
+                   that function! */
                 for(uint_fast8_t row=0; row<4; ++row) {
                     for(uint_fast8_t col=0; col<4; ++col) {
                         if(!board.getValue(row, col)) {
@@ -580,9 +584,35 @@ public:
 
         return *cachedSuccessors;
     }
+    /* Gets a random successor for the computer player's move.  To
+     * match the actual game 2048, there is a 90% chance that the new
+     * square will be a 2 and a 10% chance that the new square will be
+     * a 4.
+     */
+    Node getRandomSuccessorForComputer() const {
+        /* this assumes that the successors are interleaved as a new 2
+           square then a new 4 square... */
+        const std::list<Node>& successors = getSuccessors();
+        bool isTwo = (int_fast64_t)::rand() * 10 < (int_fast64_t)RAND_MAX * 9;
+        auto i = (::rand() % (successors.size() / 2)) * 2;
+        size_t j = 0;
+        bool returnNext = false;
+        for(auto& node : successors) {
+            if(returnNext) {
+                return node;
+            } else if(j++ == i) {
+                if(isTwo) {
+                    return node;
+                } else {
+                    returnNext = true;
+                }
+            }
+        }
+        return Node();
+    }
     Node getRandomSuccessor() const {
         const std::list<Node>& successors = getSuccessors();
-        std::uniform_int_distribution<size_t> sDist(0,successors.size()-1);
+        //std::uniform_int_distribution<size_t> sDist(0,successors.size()-1);
         //auto index = std::bind(sDist, *rand);
         //auto i = index();
         auto i = ::rand() % successors.size();
@@ -993,7 +1023,7 @@ int main(int argc, char** argv) {
                 }
             }
         } else {
-            node = std::move(node.getRandomSuccessor());
+            node = std::move(node.getRandomSuccessorForComputer());
         }
     }
 
