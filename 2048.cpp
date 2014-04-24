@@ -104,7 +104,7 @@ public:
      * Counts the number of 2 and 4 blocks that are not bordering an
      * empty space.
      */
-    uint_fast8_t numEnclosedTwosFours(uint_fast16_t values[][4]) const {
+    static uint_fast8_t numEnclosedTwosFours(uint_fast16_t values[][4]) {
         uint_fast8_t count = 0;
         for(size_t row=0; row<4; ++row) {
             for(size_t col=0; col<4; ++col) {
@@ -145,7 +145,7 @@ public:
      * Counts the number of pairs of neighboring pieces that have
      * matching values.
      */
-    uint_fast8_t numMatchingPairs(uint_fast16_t values[][4]) const {
+    static uint_fast8_t numMatchingPairs(uint_fast16_t values[][4]) {
         uint_fast8_t count = 0;
         for(size_t row=0; row<4; ++row) {
             for(size_t col=0; col<4; ++col) {
@@ -237,7 +237,8 @@ private:
             return std::make_pair(row, maxCol - colDelta);
         }
     }
-    std::pair<uint_fast8_t,uint_fast8_t> findFarthestPosition(uint_fast16_t values[][4], uint_fast8_t cellRow, uint_fast8_t cellCol, const Move& direction) const {
+
+    static std::pair<uint_fast8_t,uint_fast8_t> findFarthestPosition(uint_fast16_t values[][4], uint_fast8_t cellRow, uint_fast8_t cellCol, const Move& direction) {
         int_fast8_t row = cellRow;
         int_fast8_t col = cellCol;
         uint_fast8_t prevRow;
@@ -256,7 +257,7 @@ private:
      * the two cells can merge.  The maximum possible value if the
      * board contains all values less than 2048 should be 216.
     */
-    uint_fast8_t calculateSmoothness(uint_fast16_t values[][4]) const {
+    static uint_fast8_t calculateSmoothness(uint_fast16_t values[][4]) {
         uint_fast8_t smoothness = 0;
         
         for(size_t row=0; row<4; row++) {
@@ -290,7 +291,7 @@ private:
      * the highest possible value is 216 if the board contains values
      * all less than 2048.
      */
-    uint_fast8_t calculateMonotonicity(uint_fast16_t values[][4]) const {
+    static uint_fast8_t calculateMonotonicity(uint_fast16_t values[][4]) {
         uint_fast8_t totals[4] = {0, 0, 0, 0};
 
         for(uint_fast8_t row=0; row<4; ++row) {
