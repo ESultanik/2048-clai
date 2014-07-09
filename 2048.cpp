@@ -21,6 +21,9 @@
 
 #define DEBUG 0
 
+#define likely(x)       __builtin_expect((x),1)
+#define unlikely(x)     __builtin_expect((x),0)
+
 enum class MoveType : uint8_t {
     START,
     UP,
@@ -112,13 +115,13 @@ public:
                 if(!(v == 2 || v == 4)) {
                     continue;
                 }
-                if(col > 0 && !values[row][col-1]) {
+                if(likely(col > 0) && !values[row][col-1]) {
                     ++count;
-                } else if(col < 3 && !values[row][col+1]) {
+                } else if(likely(col < 3) && !values[row][col+1]) {
                     ++count;
-                } else if(row > 0 && !values[row-1][col]) {
+                } else if(likely(row > 0) && !values[row-1][col]) {
                     ++count;
-                } else if(row < 3 && !values[row+1][col]) {
+                } else if(likely(row < 3) && !values[row+1][col]) {
                     ++count;
                 }
             }
@@ -213,7 +216,7 @@ private:
             return std::make_pair(row, col);
         }
         assert((rowDelta != 0 || colDelta != 0) && (rowDelta + colDelta == -1 || rowDelta + colDelta == 1));
-        if(rowDelta != 0) {
+        if(likely(rowDelta != 0)) {
             int_fast8_t maxRow = rowDelta < 0 ? -1 : 4;
             for(int_fast8_t r = row + rowDelta; r != maxRow; r += rowDelta) {
                 auto v = getExponentValue(r, col);
@@ -360,7 +363,7 @@ private:
                         setValue(finalLocation.first, finalLocation.second, v);
                     }
                     setValue(row, col, 0);
-                    if(score < 0) {
+                    if(unlikely(score < 0)) {
                         score = newValue;
                     } else {
                         score += newValue;
@@ -538,7 +541,7 @@ public:
         if(!cachedSuccessors) {
             cachedSuccessors = new std::list<Node>();
             
-            if(has2048()) {
+            if(unlikely(has2048())) {
                 /* the game is over if we already have gotten 2048! */
                 /* so there are no successors */
             } else if(player == Player::RANDOM) {
@@ -599,10 +602,10 @@ public:
         size_t j = 0;
         bool returnNext = false;
         for(auto& node : successors) {
-            if(returnNext) {
+            if(unlikely(returnNext)) {
                 return node;
             } else if(j++ == i) {
-                if(isTwo) {
+                if(likely(isTwo)) {
                     return node;
                 } else {
                     returnNext = true;
@@ -736,11 +739,11 @@ AlphaBetaResult alphabeta(const Node& node, const std::function<TerminationCondi
             alpha = std::max(alpha, a.value);
             pruned += a.prunedNodes;
             --pruned;
-            if(a.value > bestValue || bestMove == MoveType::GAMEOVER) {
+            if(a.value > bestValue || unlikely(bestMove == MoveType::GAMEOVER)) {
                 bestMove = succ.getMove();
                 bestValue = a.value;
             }
-            if(a.terminationCondition == TerminationCondition::ABORT) {
+            if(unlikely(a.terminationCondition == TerminationCondition::ABORT)) {
                 return AlphaBetaResult(alpha, bestMove, a.terminationCondition, pruned);
             } else if(beta <= alpha) {
                 succ.clearSuccessorCache();
@@ -757,7 +760,7 @@ AlphaBetaResult alphabeta(const Node& node, const std::function<TerminationCondi
             beta = std::min(beta, b.value);
             pruned += b.prunedNodes;
             --pruned;
-            if(b.terminationCondition == TerminationCondition::ABORT) {
+            if(unlikely(b.terminationCondition == TerminationCondition::ABORT)) {
                 return AlphaBetaResult(beta, MoveType::GAMEOVER, b.terminationCondition, pruned);
             } else if(beta <= alpha) {
                 succ.clearSuccessorCache();
@@ -794,7 +797,7 @@ AlphaBetaResult suggestMoveParallel(const Node& node, const std::function<Termin
     MoveType suggestedMove = MoveType::START;
     for(auto& succ : node.getSuccessors()) {
         auto ab = alphabeta(succ, terminateCondition);
-        if(ab.terminationCondition == TerminationCondition::ABORT) {
+        if(unlikely(ab.terminationCondition == TerminationCondition::ABORT)) {
             return AlphaBetaResult(bestScore, suggestedMove, TerminationCondition::ABORT, 0);
         }
         if(ab.value > bestScore) {
