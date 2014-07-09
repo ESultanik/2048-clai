@@ -768,8 +768,16 @@ AlphaBetaResult alphabeta(const Node& node, const std::function<TerminationCondi
         /* ExpectiMax: */
         long double average = 0.0;
         auto& successors = node.getSuccessors();
+        bool twoAdded = true;
+        long double totalProbability = 0.0;
         for(auto& succ : successors) {
-            average += (long double)alphabeta(succ, terminateCondition, depth + 1, alpha, beta) / (long double)(successors.size()).value;
+            long double probability = twoAdded ? 0.9 : 0.1;
+            twoAdded = !twoAdded;
+            totalProbability += probability;
+            average += (long double)alphabeta(succ, terminateCondition, depth + 1, alpha, beta).value * probability;
+        }
+        if(totalProbability > 0.0) {
+            average /= totalProbability;
         }
         return AlphaBetaResult(std::min(beta, (int_fast64_t)(average + 0.5)), MoveType::RAND, TerminationCondition::CONTINUE, 0);
 #endif
